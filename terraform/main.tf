@@ -23,6 +23,34 @@ resource "azurerm_network_security_group" "app" {
   resource_group_name = azurerm_resource_group.main.name
 }
 
+resource "azurerm_network_security_rule" "load_balancer_probe" {
+  name                        = "allow-load-balancer-probe"
+  priority                    = 100
+  direction                   = "Inbound"
+  access                      = "Allow"
+  protocol                    = "Tcp"
+  source_port_range           = "*"
+  destination_port_range      = "80"
+  source_address_prefix       = "AzureLoadBalancer"
+  destination_address_prefix  = "*"
+  resource_group_name         = azurerm_resource_group.main.name
+  network_security_group_name = azurerm_network_security_group.app.name
+}
+
+resource "azurerm_network_security_rule" "http" {
+  name                        = "allow-http"
+  priority                    = 110
+  direction                   = "Inbound"
+  access                      = "Allow"
+  protocol                    = "Tcp"
+  source_port_range           = "*"
+  destination_port_range      = "80"
+  source_address_prefix       = "Internet"
+  destination_address_prefix  = "*"
+  resource_group_name         = azurerm_resource_group.main.name
+  network_security_group_name = azurerm_network_security_group.app.name
+}
+
 resource "azurerm_public_ip" "lb" {
   name                = "pip-caribeshop"
   location            = azurerm_resource_group.main.location
@@ -83,12 +111,17 @@ resource "azurerm_linux_virtual_machine_scale_set" "app" {
   location            = azurerm_resource_group.main.location
   resource_group_name = azurerm_resource_group.main.name
 
-  sku       = "Standard_D2s_v7" # La más económica de la región East US 2 (East US 2) 
-  instances = 2
+  sku          = "Standard_D2s_v7" # La más económica de la región East US 2 (East US 2)
+  instances    = 2
+  zones        = ["1", "2", "3"]
+  zone_balance = true
 
   admin_username = "azureuser"
 
   disable_password_authentication = true
+  identity {
+    type = "SystemAssigned"
+  }
 
   admin_ssh_key {
     username   = "azureuser"
@@ -123,5 +156,9 @@ resource "azurerm_linux_virtual_machine_scale_set" "app" {
   }
 
   custom_data = base64encode(file("${path.module}/cloud-init.yaml"))
+
+  lifecycle {
+    ignore_changes = [instances]
+  }
 }
 
