@@ -3,6 +3,8 @@ resource "azurerm_resource_group" "main" {
   location = var.location
 }
 
+data "azurerm_client_config" "current" {}
+
 resource "azurerm_virtual_network" "main" {
   name                = "vnet-caribeshop"
   location            = azurerm_resource_group.main.location
@@ -15,6 +17,7 @@ resource "azurerm_subnet" "app" {
   resource_group_name  = azurerm_resource_group.main.name
   virtual_network_name = azurerm_virtual_network.main.name
   address_prefixes     = ["10.0.1.0/24"]
+  service_endpoints    = ["Microsoft.KeyVault"]
 }
 
 resource "azurerm_network_security_group" "app" {
@@ -104,6 +107,49 @@ resource "azurerm_subnet_network_security_group_association" "app" {
   network_security_group_id = azurerm_network_security_group.app.id
 }
 
+resource "azurerm_key_vault" "app" {
+  name                = "kv-caribeshop-${substr(replace(var.subscription_id, "-", ""), 0, 8)}"
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
+  tenant_id           = data.azurerm_client_config.current.tenant_id
+  sku_name            = "standard"
+
+  rbac_authorization_enabled    = true
+  purge_protection_enabled      = true
+  soft_delete_retention_days    = 7
+  public_network_access_enabled = true
+
+  network_acls {
+    bypass                     = "None"
+    default_action             = "Deny"
+    ip_rules                   = [var.operator_ipv4_cidr]
+    virtual_network_subnet_ids = [azurerm_subnet.app.id]
+  }
+}
+
+resource "azurerm_role_assignment" "terraform_secrets_officer" {
+  scope                = azurerm_key_vault.app.id
+  role_definition_name = "Key Vault Secrets Officer"
+  principal_id         = data.azurerm_client_config.current.object_id
+}
+
+resource "azurerm_role_assignment" "vmss_secrets_user" {
+  scope                = azurerm_key_vault.app.id
+  role_definition_name = "Key Vault Secrets User"
+  principal_id         = azurerm_linux_virtual_machine_scale_set.app.identity[0].principal_id
+  principal_type       = "ServicePrincipal"
+}
+
+resource "azurerm_key_vault_secret" "app" {
+  name             = "caribeshop-demo"
+  key_vault_id     = azurerm_key_vault.app.id
+  value_wo         = var.demo_secret_value
+  value_wo_version = 1
+  expiration_date  = var.demo_secret_expires_at
+
+  depends_on = [azurerm_role_assignment.terraform_secrets_officer]
+}
+
 
 
 resource "azurerm_linux_virtual_machine_scale_set" "app" {
@@ -155,7 +201,11 @@ resource "azurerm_linux_virtual_machine_scale_set" "app" {
     }
   }
 
-  custom_data = base64encode(file("${path.module}/cloud-init.yaml"))
+  custom_data = base64encode(templatefile("${path.module}/cloud-init.yaml.tftpl", {
+    key_vault_uri        = azurerm_key_vault.app.vault_uri
+    secret_name          = azurerm_key_vault_secret.app.name
+    secret_status_script = file("${path.module}/../app/secret_status.py")
+  }))
 
   lifecycle {
     ignore_changes = [instances]

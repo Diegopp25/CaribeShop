@@ -1,0 +1,76 @@
+#cloud-config
+
+package_update: true
+
+packages:
+  - nginx
+
+write_files:
+  - path: /etc/nginx/conf.d/caribeshop.conf
+    permissions: "0644"
+    content: |
+      server {
+        listen 80 default_server;
+        server_name _;
+        root /var/www/html;
+        index index.html;
+
+        location = /health {
+          default_type text/plain;
+          if (-f /var/www/unhealthy) {
+            return 503 "UNHEALTHY\n";
+          }
+          return 200 "OK\n";
+        }
+
+        location = /secret-check {
+          proxy_pass http://127.0.0.1:8080;
+          proxy_set_header Host $host;
+        }
+
+        location / {
+          try_files $uri $uri/ =404;
+        }
+      }
+  - path: /var/www/html/index.html
+    permissions: "0644"
+    content: |
+      <h1>CaribeShop</h1>
+      <p>Instancia $(hostname)</p>
+      <p><a href="/secret-check">Verificar lectura segura del secreto</a></p>
+  - path: /opt/caribeshop/secret_status.py
+    permissions: "0644"
+    content: ${jsonencode(secret_status_script)}
+  - path: /etc/systemd/system/caribeshop-secret.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=CaribeShop Key Vault secret check endpoint
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      Type=simple
+      User=www-data
+      Group=www-data
+      Environment=KEY_VAULT_URI=${key_vault_uri}
+      Environment=KEY_VAULT_SECRET_NAME=${secret_name}
+      ExecStart=/usr/bin/python3 /opt/caribeshop/secret_status.py
+      Restart=on-failure
+      RestartSec=5
+      NoNewPrivileges=true
+      ProtectSystem=strict
+      ProtectHome=true
+      PrivateTmp=true
+
+      [Install]
+      WantedBy=multi-user.target
+
+runcmd:
+  - mkdir -p /opt/caribeshop
+  - rm -f /etc/nginx/sites-enabled/default
+  - systemctl daemon-reload
+  - systemctl enable --now caribeshop-secret.service
+  - nginx -t
+  - systemctl enable nginx
+  - systemctl restart nginx
