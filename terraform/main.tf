@@ -76,6 +76,8 @@ resource "azurerm_subnet_network_security_group_association" "app" {
   network_security_group_id = azurerm_network_security_group.app.id
 }
 
+
+
 resource "azurerm_linux_virtual_machine_scale_set" "app" {
   name                = "vmss-caribeshop"
   location            = azurerm_resource_group.main.location
@@ -122,3 +124,4 @@ resource "azurerm_linux_virtual_machine_scale_set" "app" {
 
   custom_data = base64encode(file("${path.module}/cloud-init.yaml"))
 }
+

@@ -5,9 +5,31 @@ package_update: true
 packages:
   - nginx
 
+write_files:
+  - path: /opt/caribeshop/site.conf
+    permissions: "0644"
+    content: |
+      server {
+        listen 80 default_server;
+        server_name _;
+        root /var/www/html;
+        index index.html;
+
+        location = /health {
+          default_type text/plain;
+          if (-f /var/www/unhealthy) {
+            return 503 "UNHEALTHY\n";
+          }
+          return 200 "OK\n";
+        }
+
+        location / {
+          try_files $uri $uri/ =404;
+        }
+      }
+
 runcmd:
-  - systemctl enable nginx
-  - systemctl start nginx
-  - echo "<h1>CaribeShop</h1>" > /var/www/html/index.html
-  - mkdir -p /var/www/html/health
-  - echo "OK" > /var/www/html/health/index.html
+  - rm -f /etc/nginx/sites-enabled/default
+  - cp /opt/caribeshop/site.conf /etc/nginx/conf.d/caribeshop.conf
+  - echo "<h1>CaribeShop</h1><p>Instancia $(hostname)</p>" > /var/www/html/index.html
+  - nginx -t && systemctl enable nginx && systemctl restart nginx
