@@ -32,3 +32,19 @@ never returns the secret value.
 The endpoint and proxy are installed by cloud-init. Existing VMSS instances
 must receive the updated model and be reimaged or replaced in a controlled,
 one-at-a-time rollout before testing the endpoint.
+
+## Policy and Key Vault audit logs
+
+The resource group has a Deny policy that rejects Key Vaults unless both RBAC
+authorization and purge protection are enabled. Key Vault `AuditEvent` logs are
+sent to the `AZKVAuditLogs` table in the `law-caribeshop` workspace for 30 days.
+
+Use this query to verify secret reads by the VMSS managed identity:
+
+```kusto
+AZKVAuditLogs
+| where OperationName == "SecretGet"
+| where tostring(Identity) contains "<VMSS principal ID>"
+| project TimeGenerated, OperationName, ResultType, CallerIpAddress, Identity
+| order by TimeGenerated desc
+```

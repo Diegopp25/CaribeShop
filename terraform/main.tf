@@ -127,6 +127,69 @@ resource "azurerm_key_vault" "app" {
   }
 }
 
+resource "azurerm_policy_definition" "key_vault_controls" {
+  name         = "deny-kv-without-security-controls"
+  policy_type  = "Custom"
+  mode         = "All"
+  display_name = "Deny Key Vaults without RBAC and purge protection"
+  description  = "Requires RBAC authorization and purge protection on Key Vaults."
+  metadata     = jsonencode({ category = "Key Vault" })
+
+  policy_rule = jsonencode({
+    if = {
+      allOf = [
+        {
+          field  = "type"
+          equals = "Microsoft.KeyVault/vaults"
+        },
+        {
+          anyOf = [
+            {
+              field     = "Microsoft.KeyVault/vaults/enableRbacAuthorization"
+              notEquals = true
+            },
+            {
+              field     = "Microsoft.KeyVault/vaults/enablePurgeProtection"
+              notEquals = true
+            }
+          ]
+        }
+      ]
+    }
+    then = {
+      effect = "Deny"
+    }
+  })
+}
+
+resource "azurerm_resource_group_policy_assignment" "key_vault_controls" {
+  name                 = "deny-kv-without-controls"
+  display_name         = "Deny Key Vaults without required security controls"
+  description          = "Requires RBAC authorization and purge protection on Key Vaults."
+  resource_group_id    = azurerm_resource_group.main.id
+  policy_definition_id = azurerm_policy_definition.key_vault_controls.id
+  enforce              = true
+}
+
+resource "azurerm_log_analytics_workspace" "main" {
+  name                = "law-caribeshop"
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
+  sku                 = "PerGB2018"
+  retention_in_days   = 30
+}
+
+resource "azurerm_monitor_diagnostic_setting" "key_vault" {
+  name                           = "diag-kv-caribeshop"
+  target_resource_id             = azurerm_key_vault.app.id
+  log_analytics_workspace_id     = azurerm_log_analytics_workspace.main.id
+  log_analytics_destination_type = "Dedicated"
+
+  enabled_log {
+    category = "AuditEvent"
+  }
+}
+
 resource "azurerm_role_assignment" "terraform_secrets_officer" {
   scope                = azurerm_key_vault.app.id
   role_definition_name = "Key Vault Secrets Officer"
