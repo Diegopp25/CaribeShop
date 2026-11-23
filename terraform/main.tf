@@ -220,10 +220,17 @@ resource "azurerm_linux_virtual_machine_scale_set" "app" {
   location            = azurerm_resource_group.main.location
   resource_group_name = azurerm_resource_group.main.name
 
-  sku          = "Standard_D2s_v7" # La más económica de la región East US 2 (East US 2)
-  instances    = 2
-  zones        = ["1", "2", "3"]
-  zone_balance = true
+  sku             = "Standard_D2s_v7" # La más económica de la región East US 2 (East US 2)
+  instances       = 2
+  zones           = ["1", "2", "3"]
+  zone_balance    = true
+  health_probe_id = azurerm_lb_probe.health.id
+
+  automatic_instance_repair {
+    enabled      = true
+    grace_period = "PT10M"
+    action       = "Replace"
+  }
 
   admin_username = "azureuser"
 
@@ -287,7 +294,7 @@ resource "azurerm_monitor_autoscale_setting" "app" {
 
     capacity {
       minimum = 1
-      maximum = 1
+      maximum = 2
       default = 1
     }
 
