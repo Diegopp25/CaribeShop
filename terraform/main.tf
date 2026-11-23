@@ -229,7 +229,7 @@ resource "azurerm_linux_virtual_machine_scale_set" "app" {
   automatic_instance_repair {
     enabled      = true
     grace_period = "PT10M"
-    action       = "Replace"
+    action       = "Restart"
   }
 
   admin_username = "azureuser"
