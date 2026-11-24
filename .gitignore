@@ -12,6 +12,11 @@
 crash.log
 crash.*.log
 
+# Local load testing
+.venv-load/
+__pycache__/
+*.py[cod]
+
 # IDE
 .vscode/
 .idea/
